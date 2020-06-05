@@ -675,7 +675,10 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
         else
             comma = 1;
 
-        /* table, key, value */
+        /* table, key, value 
+        ** 看到下面number前后加了""和string分不清了，你是不是大吃了一惊，
+        ** 兄弟，事实就是如此！！！！
+		*/
         keytype = lua_type(l, -2);
         if (keytype == LUA_TNUMBER) {   /* 看到了么 number作为key的->"number": */
             strbuf_append_char(json, '"');
