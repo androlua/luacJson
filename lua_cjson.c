@@ -725,9 +725,9 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
         current_depth++;
         json_check_encode_depth(l, cfg, current_depth, json);
         len = lua_array_length(l, cfg, json);
-        if (len > 0)
+        if (len > 0)	/* 这是一个连续的数组[1,2,3...N] */
             json_append_array(l, cfg, current_depth, json, len);
-        else
+        else	/* 除开上面的其它情况 */
             json_append_object(l, cfg, current_depth, json);
         break;
     case LUA_TNIL:

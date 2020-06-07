@@ -121,6 +121,7 @@ static inline int strbuf_length(strbuf_t *s)
     return s->length;
 }
 
+/* 写入一个字符 */
 static inline void strbuf_append_char(strbuf_t *s, const char c)
 {
     strbuf_ensure_empty_length(s, 1);
@@ -132,6 +133,7 @@ static inline void strbuf_append_char_unsafe(strbuf_t *s, const char c)
     s->buf[s->length++] = c;
 }
 
+/* 写入一片指针指向的内存，长度为len */
 static inline void strbuf_append_mem(strbuf_t *s, const char *c, int len)
 {
     strbuf_ensure_empty_length(s, len);
