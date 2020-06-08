@@ -76,35 +76,47 @@
 #endif
 
 typedef enum {
+    /* 非数组的table */
     T_OBJ_BEGIN,
     T_OBJ_END,
+
+    /* 数组形的数据 tbl={1,2,3,4,5} */
     T_ARR_BEGIN,
     T_ARR_END,
+
+    /* 字符串，浮点数，整数，booll类型的token */
     T_STRING,
     T_NUMBER,
     T_INTEGER,
     T_BOOLEAN,
+
     T_NULL,
-    T_COLON,
-    T_COMMA,
-    T_END,
-    T_WHITESPACE,
-    T_ERROR,
-    T_UNKNOWN   /* 尚不能确定token,读下一个char再看看 */
+
+    T_COLON,            /* 冒号(:) */
+    T_COMMA,            /* 逗号(,) */
+
+    T_END,              /* C 的EOF */
+    T_WHITESPACE,   
+    T_ERROR,            /* 发生了错误 */
+    T_UNKNOWN           /* 尚不能确定token,读下一个char再看看 */
 } json_token_type_t;
 
 static const char *json_token_type_name[] = {
     "T_OBJ_BEGIN",
     "T_OBJ_END",
+
     "T_ARR_BEGIN",
     "T_ARR_END",
+
     "T_STRING",
     "T_NUMBER",
     "T_INTEGER",
     "T_BOOLEAN",
     "T_NULL",
+
     "T_COLON",
     "T_COMMA",
+
     "T_END",
     "T_WHITESPACE",
     "T_ERROR",
@@ -126,31 +138,40 @@ typedef struct {
     int encode_max_depth;
     int encode_invalid_numbers;     /* 2 => Encode as "null" */
     int encode_number_precision;
-    int encode_keep_buffer;
 
-    int decode_invalid_numbers;
+    int encode_keep_buffer;         /* ==1:使用结构体自身的encode_buf,反之，使用外部的 */
+
+    int decode_invalid_numbers;     /* 是否处理某些特定的非法数字eg:Inf, NaN, hex */
     int decode_max_depth;
 } json_config_t;
 
 typedef struct {
-    const char *data;
-    const char *ptr;
-    strbuf_t *tmp;    /* Temporary storage for strings */
-    json_config_t *cfg;
-    int current_depth;
+    /* 指向原始的被解码的buf,所以这里用了const修饰 */
+    const char *data;   /*  被解析的字符串地址的head地址 */
+    const char *ptr;    /* 当前解析到了那里 */
+
+    /* 解码器自己申请的一片MEM  */
+    strbuf_t   *tmp;    /* Temporary storage for strings */
+
+    json_config_t *cfg; /* 对应的配置 */
+    int current_depth;  /* 当前的嵌套深度 */
 } json_parse_t;
+
 
 /* 似曾相识么？ */
 typedef struct {
-    json_token_type_t type;
-    int index;
+    json_token_type_t   type;
+    int                 index;  /* 当前解析的index?-用于error显示？ */
+
+    /* 被成功解析的token的值 */
     union {
-        const char *string;
-        double number;
+        const char  *string;
+        double      number;
         lua_Integer integer;
-        int boolean;
+        int         boolean;
     } value;
-    int string_len;
+
+    int string_len;     /* 若上面的type为 T_STRING，则这里表示对应的长度 */
 } json_token_t;
 
 /*
@@ -418,35 +439,47 @@ static void json_create_config(lua_State *l)
 
     /* Decoding init */
 
+
+
     /* Tag all characters as an error */
     for (i = 0; i < 256; i++)
         cfg->ch2token[i] = T_ERROR;
 
     /* Set tokens that require no further processing */
-    cfg->ch2token['{'] = T_OBJ_BEGIN;
-    cfg->ch2token['}'] = T_OBJ_END;
-    cfg->ch2token['['] = T_ARR_BEGIN;
-    cfg->ch2token[']'] = T_ARR_END;
-    cfg->ch2token[','] = T_COMMA;
-    cfg->ch2token[':'] = T_COLON;
+    cfg->ch2token['{']  = T_OBJ_BEGIN;
+    cfg->ch2token['}']  = T_OBJ_END;
+    cfg->ch2token['[']  = T_ARR_BEGIN;
+    cfg->ch2token[']']  = T_ARR_END;
+    
+    cfg->ch2token[',']  = T_COMMA;  /* comma:逗号 */
+    cfg->ch2token[':']  = T_COLON;  /* colon:冒号 */
+
     cfg->ch2token['\0'] = T_END;
-    cfg->ch2token[' '] = T_WHITESPACE;
+    
+    /* json认可的空白 */
+    cfg->ch2token[' ']  = T_WHITESPACE;
     cfg->ch2token['\t'] = T_WHITESPACE;
     cfg->ch2token['\n'] = T_WHITESPACE;
     cfg->ch2token['\r'] = T_WHITESPACE;
 
     /* Update characters that require further processing */
     cfg->ch2token['f'] = T_UNKNOWN;     /* false? */
+
     cfg->ch2token['i'] = T_UNKNOWN;     /* inf, ininity? */
     cfg->ch2token['I'] = T_UNKNOWN;
     cfg->ch2token['n'] = T_UNKNOWN;     /* null, nan? */
     cfg->ch2token['N'] = T_UNKNOWN;
+
     cfg->ch2token['t'] = T_UNKNOWN;     /* true? */
+
     cfg->ch2token['"'] = T_UNKNOWN;     /* string? */
+    
     cfg->ch2token['+'] = T_UNKNOWN;     /* number? */
     cfg->ch2token['-'] = T_UNKNOWN;
     for (i = 0; i < 10; i++)
         cfg->ch2token['0' + i] = T_UNKNOWN;
+
+
 
     /* Lookup table for parsing escape characters */
     for (i = 0; i < 256; i++)
@@ -777,11 +810,14 @@ static int json_encode(lua_State *l)
     return 1;
 }
 
+
+
+
 /* ===== DECODING ===== */
 
 static void json_process_value(lua_State *l, json_parse_t *json,
                                json_token_t *token);
-
+/* 16进制的字符转换为对应的数值 */
 static int hexdigit2int(char hex)
 {
     if ('0' <= hex  && hex <= '9')
@@ -923,7 +959,7 @@ static int json_append_unicode_escape(json_parse_t *json)
 static void json_set_token_error(json_token_t *token, json_parse_t *json,
                                  const char *errtype)
 {
-    token->type = T_ERROR;
+    token->type  = T_ERROR;
     token->index = json->ptr - json->data;
     token->value.string = errtype;
 }
@@ -936,7 +972,7 @@ static void json_next_string_token(json_parse_t *json, json_token_t *token)
     /* Caller must ensure a string is next */
     assert(*json->ptr == '"');
 
-    /* Skip " */
+    /*     Skip "     */
     json->ptr++;
 
     /* json->tmp is the temporary strbuf used to accumulate the
@@ -975,17 +1011,19 @@ static void json_next_string_token(json_parse_t *json, json_token_t *token)
             /* Skip '\' */
             json->ptr++;
         }
+
         /* Append normal character or translated single character
          * Unicode escapes are handled above */
         strbuf_append_char_unsafe(json->tmp, ch);
+        
         json->ptr++;
     }
     json->ptr++;    /* Eat final quote (") */
 
     strbuf_ensure_null(json->tmp);
 
-    token->type = T_STRING;
-    token->value.string = strbuf_string(json->tmp, &token->string_len);
+    token->type         = T_STRING; /* 是一个字符串类型的token */
+    token->value.string = strbuf_string(json->tmp, &token->string_len); /* 字符串的token的具体值 */
 }
 
 /* JSON numbers should take the following form:
@@ -1039,6 +1077,7 @@ static int json_is_invalid_number(json_parse_t *json)
     return 0;
 }
 
+/* 读入一个number的token */
 static void json_next_number_token(json_parse_t *json, json_token_t *token)
 {
     char *endptr;
@@ -1047,7 +1086,7 @@ static void json_next_number_token(json_parse_t *json, json_token_t *token)
         json_set_token_error(token, json, "invalid number");
         return;
     }
-    if (*endptr == '.' || *endptr == 'e' || *endptr == 'E') {
+    if (*endptr == '.' || *endptr == 'e' || *endptr == 'E') {   /* 是个浮点数 */
         token->type = T_NUMBER;
         token->value.number = fpconv_strtod(json->ptr, &endptr);
     } else {
@@ -1061,13 +1100,17 @@ static void json_next_number_token(json_parse_t *json, json_token_t *token)
 /* Fills in the token struct.
  * T_STRING will return a pointer to the json_parse_t temporary string
  * T_ERROR will leave the json->ptr pointer at the error.
+ *
+ * 尝试读入下一个token
  */
 static void json_next_token(json_parse_t *json, json_token_t *token)
 {
     const json_token_type_t *ch2token = json->cfg->ch2token;
     int ch;
 
-    /* Eat whitespace. */
+    /* 
+     * Eat(跳过) whitespace. 
+     */
     while (1) {
         ch = (unsigned char)*(json->ptr);
         token->type = ch2token[ch];
@@ -1086,12 +1129,14 @@ static void json_next_token(json_parse_t *json, json_token_t *token)
         return;
     }
 
-    if (token->type == T_END) {
+    if (token->type == T_END) { /* 字符串已 \0结尾，这里判断下是否到达了整个字符串的结尾 */
         return;
     }
 
-    /* Found a known single character token, advance index and return */
-    if (token->type != T_UNKNOWN) {
+    /* Found a known single character token, advance index and return  
+     * 已经能确定token了，这里返回即可
+     */
+    if (token->type != T_UNKNOWN) { 
         json->ptr++;
         return;
     }
@@ -1102,7 +1147,7 @@ static void json_next_token(json_parse_t *json, json_token_t *token)
      * JSON identifier must be lowercase.
      * When strict_numbers if disabled, either case is allowed for
      * Infinity/NaN (since we are no longer following the spec..) */
-    if (ch == '"') {
+    if (ch == '"') {    /* 字符串类型的token */
         json_next_string_token(json, token);
         return;
     } else if (ch == '-' || ('0' <= ch && ch <= '9')) {
@@ -1169,12 +1214,12 @@ static inline void json_decode_ascend(json_parse_t *json)
     json->current_depth--;
 }
 
+/* descend:下降，难道是传说中的递归下降分析算法？？？？ */
 static void json_decode_descend(lua_State *l, json_parse_t *json, int slots)
 {
     json->current_depth++;
 
-    if (json->current_depth <= json->cfg->decode_max_depth &&
-        lua_checkstack(l, slots)) {
+    if (json->current_depth <= json->cfg->decode_max_depth && lua_checkstack(l, slots)) {
         return;
     }
 
@@ -1187,8 +1232,7 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
 {
     json_token_t token;
 
-    /* 3 slots required:
-     * .., table, key, value */
+    /* 3 slots required: table, key, value */
     json_decode_descend(l, json, 3);
 
     lua_newtable(l);
@@ -1196,19 +1240,19 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
     json_next_token(json, &token);
 
     /* Handle empty objects */
-    if (token.type == T_OBJ_END) {
+    if (token.type == T_OBJ_END) {  /* 这是一张空表 */
         json_decode_ascend(json);
         return;
     }
 
     while (1) {
-        if (token.type != T_STRING)
+        if (token.type != T_STRING) /* 看到了么，key仅支持string！ tbl={1,2,"a",}这种顺序的除外 */
             json_throw_parse_error(l, json, "object key string", &token);
 
         /* Push key */
         lua_pushlstring(l, token.value.string, token.string_len);
 
-        json_next_token(json, &token);
+        json_next_token(json, &token);  /* {"chatId":26110007,} 读出一个分号(:)的token*/
         if (token.type != T_COLON)
             json_throw_parse_error(l, json, "colon", &token);
 
@@ -1226,7 +1270,7 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
             return;
         }
 
-        if (token.type != T_COMMA)
+        if (token.type != T_COMMA)  /* 不是结尾的话，则一对key<->之后必须插入一个, */
             json_throw_parse_error(l, json, "comma or object end", &token);
 
         json_next_token(json, &token);
@@ -1312,12 +1356,12 @@ static int json_decode(lua_State *l)
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
 
-    json.cfg = json_fetch_config(l);
-    json.data = luaL_checklstring(l, 1, &json_len);
+    json.cfg    = json_fetch_config(l);   /* 提取配置 */
+    json.data   = luaL_checklstring(l, 1, &json_len); /* 传入参数必须是个字符串 */
     json.current_depth = 0;
-    json.ptr = json.data;
+    json.ptr    = json.data;
 
-    /* Detect Unicode other than UTF-8 (see RFC 4627, Sec 3)
+    /* Detect Unicode other than UTF-8 (see RFC 4627, Sec 3)   检测utf-8之外的编码
      *
      * CJSON can support any simple data type, hence only the first
      * character is guaranteed to be ASCII (at worst: '"'). This is
@@ -1343,6 +1387,7 @@ static int json_decode(lua_State *l)
 
     return 1;
 }
+
 
 /* ===== INITIALISATION ===== */
 

@@ -153,6 +153,7 @@ static inline void strbuf_ensure_null(strbuf_t *s)
     s->buf[s->length] = 0;
 }
 
+/* 返回buf的数据指针以及长度 */
 static inline char *strbuf_string(strbuf_t *s, int *len)
 {
     if (len)
