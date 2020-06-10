@@ -133,7 +133,7 @@ typedef struct {
     strbuf_t encode_buf;
 
     int encode_sparse_convert;
-    int encode_sparse_ratio;    /* ratio 比率 */
+    int encode_sparse_ratio;        /* ratio 比率 */
     int encode_sparse_safe;
     int encode_max_depth;
     int encode_invalid_numbers;     /* 2 => Encode as "null" */
@@ -147,10 +147,10 @@ typedef struct {
 
 typedef struct {
     /* 指向原始的被解码的buf,所以这里用了const修饰 */
-    const char *data;   /*  被解析的字符串地址的head地址 */
+    const char *data;   /* 被解析的字符串地址的head地址 */
     const char *ptr;    /* 当前解析到了那里 */
 
-    /* 解码器自己申请的一片MEM  */
+    /* 解码器自己申请的一片MEM */
     strbuf_t   *tmp;    /* Temporary storage for strings */
 
     json_config_t *cfg; /* 对应的配置 */
@@ -250,7 +250,7 @@ static json_config_t *json_arg_init(lua_State *l, int args)
 /* Process integer options for configuration functions
  * 
  * 若玩家传入了参数的新值optindex,则将其更新到*setting上
- * 返回setting指针指向的值(可能被玩家输入的合法值更新)
+ * 返回setting指针指向的最新值
  */
 static int json_integer_option(lua_State *l, int optindex, int *setting,
                                int min, int max)
@@ -270,9 +270,15 @@ static int json_integer_option(lua_State *l, int optindex, int *setting,
     return 1;
 }
 
-/* Process enumerated arguments for a configuration function */
-static int json_enum_option(lua_State *l, int optindex, int *setting,
-                            const char **options, int bool_true)
+/* Process enumerated arguments for a configuration function
+ *  options: 如果玩家自己带了映射表，则传入 eg: options[] = { "off", "on", "null", NULL }
+ *  bool_true:这个字段多余，不知道是否是忘了删除了
+ */
+static int json_enum_option(lua_State *l,
+                            int optindex,
+                            int *setting,
+                            const char **options,   
+                            int bool_true)
 {
     static const char *bool_options[] = { "off", "on", NULL };
 
@@ -1214,7 +1220,10 @@ static inline void json_decode_ascend(json_parse_t *json)
     json->current_depth--;
 }
 
-/* descend:下降，难道是传说中的递归下降分析算法？？？？ */
+/*
+ * descend:下降，难道是传说中的递归下降分析算法？？？？ 中的下降是一种意思么？
+ * 兄弟，你猜对了。
+ */
 static void json_decode_descend(lua_State *l, json_parse_t *json, int slots)
 {
     json->current_depth++;
@@ -1270,7 +1279,7 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
             return;
         }
 
-        if (token.type != T_COMMA)  /* 不是结尾的话，则一对key<->之后必须插入一个, */
+        if (token.type != T_COMMA)  /* 不是结尾的话，则一对key<->val之后必须插入一个, */
             json_throw_parse_error(l, json, "comma or object end", &token);
 
         json_next_token(json, &token);
@@ -1303,12 +1312,12 @@ static void json_parse_array_context(lua_State *l, json_parse_t *json)
 
         json_next_token(json, &token);
 
-        if (token.type == T_ARR_END) {
+        if (token.type == T_ARR_END) {  /* 数组读完了，直接返回 */
             json_decode_ascend(json);
             return;
         }
 
-        if (token.type != T_COMMA)
+        if (token.type != T_COMMA)      /* [2,3,"4",5,6,"7"] 数组的两个元素之间必须有个逗号(,)的token */
             json_throw_parse_error(l, json, "comma or array end", &token);
 
         json_next_token(json, &token);
